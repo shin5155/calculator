@@ -8,7 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-
+using Windows.Devices.AllJoyn;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -81,6 +81,10 @@ namespace CalculatorApp
                 {
                     if (button.Target is ButtonBase btn && btn.IsEnabled)
                     {
+
+                        //Added here
+                        Debug.WriteLine($"Executing command for button: {btn.Name}"); // 🔍 Debug line
+
                         RunButtonCommand(btn);
                         break;
                     }
@@ -458,6 +462,8 @@ namespace CalculatorApp
 
             private static void OnVirtualKeyPropertyChanged(DependencyObject target, MyVirtualKey oldValue, MyVirtualKey newValue)
             {
+
+
                 // Writer lock for the static maps
                 lock (s_keyboardShortcutMapLockMutex)
                 {
@@ -469,6 +475,10 @@ namespace CalculatorApp
                     if (s_virtualKey.TryGetValue(viewId, out var iterViewMap))
                     {
                         Insert(iterViewMap, newValue, new WeakReference(button));
+
+                        //Added multiply here
+                        Insert(s_virtualKey[viewId], MyVirtualKey.Multiply, new WeakReference(target));
+
                     }
                     else
                     {
@@ -476,6 +486,11 @@ namespace CalculatorApp
                         s_virtualKey.Add(viewId, new SortedDictionary<MyVirtualKey, List<WeakReference>>());
                         Insert(s_virtualKey[viewId], newValue, new WeakReference(button));
                     }
+
+
+
+
+
                 }
             }
 
@@ -629,16 +644,81 @@ namespace CalculatorApp
                 {
                     char character = ((char)args.KeyCode);
                     var buttons = EqualRange(s_characterForButtons[viewId], character);
+                
+
                     KeyboardShortcutManagerLocals.RunFirstEnabledButtonCommand(buttons);
 
                     KeyboardShortcutManagerLocals.LightUpButtons(buttons);
                 }
             }
 
+
+            //Register Multiply
+            private void RegisterMultiplyButton()
+            {
+                int viewId = Utilities.GetWindowId();
+
+                // Ensure s_virtualKey has the Multiply key registered
+                if (!KeyboardShortcutManager.s_virtualKey.ContainsKey(viewId))
+                {
+                    Debug.WriteLine("🔴 ViewId not found in s_virtualKey. Creating entry...");
+                    KeyboardShortcutManager.s_virtualKey[viewId] = new SortedDictionary<MyVirtualKey, List<WeakReference>>();
+                }
+
+                // Check if Multiply is already registered
+                if (!KeyboardShortcutManager.s_virtualKey[viewId].ContainsKey(MyVirtualKey.Multiply))
+                {
+                    Debug.WriteLine("🔵 Multiply key not registered. Adding now...");
+
+                    var multiplyButton = FindButtonByName("MultiplyButton");
+                    if (multiplyButton != null)
+                    {
+                        Debug.WriteLine("✅ MultiplyButton found! Adding to shortcut manager.");
+                        KeyboardShortcutManager.s_virtualKey[viewId].Add(MyVirtualKey.Multiply, new List<WeakReference> { new WeakReference(multiplyButton) });
+                    }
+                    else
+                    {
+                        Debug.WriteLine("❌ MultiplyButton NOT FOUND in UI. Check UI XAML.");
+                    }
+                }
+            }
+
+
+
+
+
+
+
+            private static ButtonBase FindButtonByName(string name)
+            {
+                // 🔍 Iterate over the outer dictionary entries (view IDs)
+                foreach (var outerEntry in KeyboardShortcutManager.s_virtualKey)
+                {
+                    // 🔍 Iterate over the inner dictionary entries (MyVirtualKey → List<WeakReference>)
+                    foreach (var innerEntry in outerEntry.Value)
+                    {
+                        List<WeakReference> buttonList = innerEntry.Value; // ✅ Get the List<WeakReference>
+
+                        // 🔍 Iterate over each WeakReference inside the list
+                        foreach (WeakReference weakRef in buttonList)
+                        {
+                            if (weakRef.Target is ButtonBase btn && btn.Name == name)
+                            {
+                                return btn; // ✅ Found the button, return it
+                            }
+                        }
+                    }
+                }
+
+                return null; // ❌ Return null if button is not found
+            }
+
+
+
             private static void OnKeyDownHandler(CoreWindow sender, KeyEventArgs args)
             {
                 s_keyHandlerCount++;
-                
+
                 if (args.Handled)
                 {
                     return;
@@ -650,63 +730,153 @@ namespace CalculatorApp
                 bool isControlKeyPressed = (Window.Current.CoreWindow.GetKeyState(Windows.System.VirtualKey.Control) & CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down;
                 bool isShiftKeyPressed = (Window.Current.CoreWindow.GetKeyState(Windows.System.VirtualKey.Shift) & CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down;
                 bool isAltKeyPressed = (Window.Current.CoreWindow.GetKeyState(Windows.System.VirtualKey.Menu) & CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down;
+                //Try
+                if (key == Windows.System.VirtualKey.X)
+                {
+                    Debug.WriteLine("🔢 X key pressed, mapping to Multiply...");
+
+                 
+                    var multiplyKey = MyVirtualKey.Multiply;
+
+                    // Ensure the Multiply button exists
+                    var multiplyButton = FindButtonByName("MultiplyButton");
+
+                    if (multiplyButton == null)
+                    {
+                        Debug.WriteLine("❌ MultiplyButton NOT FOUND in UI. Manually registering...");
+
+                        // Attempt to locate it manually
+                        multiplyButton = FindButtonByName("mul"); // Alternative name in XAML?
+
+                        if (multiplyButton != null)
+                        {
+                            Debug.WriteLine("✅ MultiplyButton found as 'mul'. Adding it manually.");
+                        }
+                        else
+                        {
+                            Debug.WriteLine("❌ MultiplyButton still NOT FOUND. Check XAML.");
+                        }
+                    }
+
+                    // Ensure s_virtualKey is properly registered
+                    if (!KeyboardShortcutManager.s_virtualKey.ContainsKey(viewId))
+                    {
+                        KeyboardShortcutManager.s_virtualKey[viewId] = new SortedDictionary<MyVirtualKey, List<WeakReference>>();
+                    }
+
+                    // Register the MultiplyButton manually if necessary
+                    if (multiplyButton != null)
+                    {
+                        KeyboardShortcutManager.s_virtualKey[viewId][multiplyKey] = new List<WeakReference> { new WeakReference(multiplyButton) };
+                        Debug.WriteLine("✅ MultiplyButton successfully registered to shortcut keys.");
+                    }
+
+                    // Fetch mapped buttons
+                    if (KeyboardShortcutManager.s_virtualKey[viewId].ContainsKey(multiplyKey))
+                    {
+                        var multiplyButtons = KeyboardShortcutManager.s_virtualKey[viewId][multiplyKey];
+
+                        Debug.WriteLine($"🔍 Buttons mapped to Multiply: {multiplyButtons.Count}");
+
+                        foreach (var button in multiplyButtons)
+                        {
+                            if (button.Target is ButtonBase btn)
+                            {
+                                Debug.WriteLine($"🟢 Available UI Button: {btn.Name}");
+                            }
+                        }
+
+                        if (multiplyButtons.Any())
+                        {
+                            Debug.WriteLine("✅ Multiply button(s) found! Triggering command...");
+                            KeyboardShortcutManagerLocals.RunFirstEnabledButtonCommand(multiplyButtons);
+                            KeyboardShortcutManagerLocals.LightUpButtons(multiplyButtons);
+                        }
+                        else
+                        {
+                            Debug.WriteLine("❌ No valid Multiply button found.");
+                        }
+                    }
+                }
+
+
+
+
+
+
+                //End try
+
+
+
+
+
+
+
 
                 // Handle Ctrl + E for DateCalculator
                 if ((key == Windows.System.VirtualKey.E) && isControlKeyPressed && !isShiftKeyPressed && !isAltKeyPressed)
-                {
-                    NavigateModeByShortcut(true, false, false, key, ViewMode.Date);
-                    return;
-                }
-
-                if (s_ignoreNextEscape.TryGetValue(viewId, out var currentIgnoreNextEscape))
-                {
-                    if (currentIgnoreNextEscape && key == Windows.System.VirtualKey.Escape)
                     {
-                        if (s_keepIgnoringEscape.TryGetValue(viewId, out var currentKeepIgnoringEscape))
-                        {
-                            if (!currentKeepIgnoringEscape)
-                            {
-                                HonorEscape();
-                            }
-                            return;
-                        }
+                        NavigateModeByShortcut(true, false, false, key, ViewMode.Date);
+                        return;
                     }
-                }
 
-                if (s_fHonorShortcuts.TryGetValue(viewId, out var currentHonorShortcuts))
-                {
-                    if (currentHonorShortcuts)
+                    if (s_ignoreNextEscape.TryGetValue(viewId, out var currentIgnoreNextEscape))
                     {
-                        var lookupMap = GetCurrentKeyDictionary(isControlKeyPressed, isShiftKeyPressed, isAltKeyPressed);
-                        if (lookupMap == null)
+                        if (currentIgnoreNextEscape && key == Windows.System.VirtualKey.Escape)
                         {
-                            return;
-                        }
-
-                        var buttons = EqualRange(lookupMap, (MyVirtualKey)key);
-                        if (!buttons.Any())
-                        {
-                            return;
-                        }
-
-                        KeyboardShortcutManagerLocals.RunFirstEnabledButtonCommand(buttons);
-
-                        // Ctrl+C and Ctrl+V shifts focus to some button because of which enter doesn't work after copy/paste. So don't shift focus if Ctrl+C or Ctrl+V
-                        // is pressed. When drop down is open, pressing escape shifts focus to clear button. So don't shift focus if drop down is open. Ctrl+Insert is
-                        // equivalent to Ctrl+C and Shift+Insert is equivalent to Ctrl+V
-                        //var currentIsDropDownOpen = s_IsDropDownOpen.find(viewId);
-                        if (!s_IsDropDownOpen.TryGetValue(viewId, out var currentIsDropDownOpen) || !currentIsDropDownOpen)
-                        {
-                            // Do not Light Up Buttons when Ctrl+C, Ctrl+V, Ctrl+Insert or Shift+Insert is pressed
-                            if (!(isControlKeyPressed && (key == Windows.System.VirtualKey.C || key == Windows.System.VirtualKey.V || key == Windows.System.VirtualKey.Insert))
-                                & !(isShiftKeyPressed && (key == Windows.System.VirtualKey.Insert)))
+                            if (s_keepIgnoringEscape.TryGetValue(viewId, out var currentKeepIgnoringEscape))
                             {
-                                KeyboardShortcutManagerLocals.LightUpButtons(buttons);
+                                if (!currentKeepIgnoringEscape)
+                                {
+                                    HonorEscape();
+                                }
+                                return;
                             }
                         }
                     }
+
+                    if (s_fHonorShortcuts.TryGetValue(viewId, out var currentHonorShortcuts))
+                    {
+                        if (currentHonorShortcuts)
+                        {
+                            var lookupMap = GetCurrentKeyDictionary(isControlKeyPressed, isShiftKeyPressed, isAltKeyPressed);
+                            if (lookupMap == null)
+                            {
+                                return;
+                            }
+
+                            var buttons = EqualRange(lookupMap, (MyVirtualKey)key);
+
+
+                            if (key == Windows.System.VirtualKey.X)
+                            {
+                                key = Windows.System.VirtualKey.Multiply;
+                            }
+
+                            if (!buttons.Any())
+                            {
+                                return;
+                            }
+
+                            KeyboardShortcutManagerLocals.RunFirstEnabledButtonCommand(buttons);
+
+                            // Ctrl+C and Ctrl+V shifts focus to some button because of which enter doesn't work after copy/paste. So don't shift focus if Ctrl+C or Ctrl+V
+                            // is pressed. When drop down is open, pressing escape shifts focus to clear button. So don't shift focus if drop down is open. Ctrl+Insert is
+                            // equivalent to Ctrl+C and Shift+Insert is equivalent to Ctrl+V
+                            //var currentIsDropDownOpen = s_IsDropDownOpen.find(viewId);
+                            if (!s_IsDropDownOpen.TryGetValue(viewId, out var currentIsDropDownOpen) || !currentIsDropDownOpen)
+                            {
+                                // Do not Light Up Buttons when Ctrl+C, Ctrl+V, Ctrl+Insert or Shift+Insert is pressed
+                                if (!(isControlKeyPressed && (key == Windows.System.VirtualKey.C || key == Windows.System.VirtualKey.V || key == Windows.System.VirtualKey.Insert))
+                                    & !(isShiftKeyPressed && (key == Windows.System.VirtualKey.Insert)))
+                                {
+                                    KeyboardShortcutManagerLocals.LightUpButtons(buttons);
+                                }
+                            }
+                        }
+                    }
                 }
-            }
+            
 
             private static void OnKeyUpHandler(CoreWindow sender, KeyEventArgs args)
             {
@@ -821,7 +991,7 @@ namespace CalculatorApp
             }
 
             private static readonly SortedDictionary<int, SortedDictionary<char, List<WeakReference>>> s_characterForButtons = new SortedDictionary<int, SortedDictionary<char, List<WeakReference>>>();
-            private static readonly SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>> s_virtualKey = new SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>>();
+           internal static readonly SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>> s_virtualKey = new SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>>();
             private static readonly SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>> s_VirtualKeyControlChordsForButtons = new SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>>();
             private static readonly SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>> s_VirtualKeyShiftChordsForButtons = new SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>>();
             private static readonly SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>> s_VirtualKeyAltChordsForButtons = new SortedDictionary<int, SortedDictionary<MyVirtualKey, List<WeakReference>>>();
